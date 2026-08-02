@@ -1,0 +1,8 @@
+venv/
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+
+# Lokal portfölj-/bevakningsdata - användarspecifikt, inte kod
+portfolj_data.json
+bevakning_data.json

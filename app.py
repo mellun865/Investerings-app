@@ -8,6 +8,7 @@ Körs lokalt med: streamlit run app.py
 Eller publiceras gratis via share.streamlit.io.
 """
 
+import os
 import re
 import json
 import datetime
@@ -38,39 +39,77 @@ STARTPORTFOLJ = {
     "Swedbank A":      {"ticker": "SWED-A.ST", "borskollen": "swedbank",              "sok": "Swedbank"},
 }
 
+# Portföljen och bevakningslistan sparas till lokala JSON-filer så att egna
+# tillägg/borttag, målkurser och önskade köpkurser finns kvar nästa gång
+# appen startas, istället för att återställas varje gång.
+PORTFOLJ_FIL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "portfolj_data.json")
+BEVAKNING_FIL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bevakning_data.json")
+
+
+def spara_lista(session_nyckel, fil):
+    with open(fil, "w", encoding="utf-8") as f:
+        json.dump(st.session_state[session_nyckel], f, ensure_ascii=False, indent=2)
+
+
+def ladda_lista(fil, standard):
+    if os.path.exists(fil):
+        try:
+            with open(fil, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
+    return standard
+
+
+def spara_portfolj():
+    spara_lista("portfolj", PORTFOLJ_FIL)
+
+
+def spara_bevakning():
+    spara_lista("bevakning", BEVAKNING_FIL)
+
+
 if "portfolj" not in st.session_state:
-    st.session_state.portfolj = dict(STARTPORTFOLJ)
+    st.session_state.portfolj = ladda_lista(PORTFOLJ_FIL, dict(STARTPORTFOLJ))
+if "bevakning" not in st.session_state:
+    st.session_state.bevakning = ladda_lista(BEVAKNING_FIL, {})
 
 
-def validera_och_hamta_bolagsinfo(ticker_input):
+@st.cache_data(ttl=3600)
+def sok_bolag(sokterm):
     """
-    Tar en ticker (t.ex. "VOLV-B.ST" eller "AAPL") och försöker validera
-    den mot yfinance. Returnerar bolagsinfo, eller None om tickern inte
-    gav någon användbar data alls (troligen felstavad).
+    Söker upp bolag på namn (t.ex. "Volvo" eller "Apple") via yfinance.
+    Returnerar en lista med träffar (aktier) som användaren kan välja
+    rätt bolag/börs ur, utan att behöva känna till exakt ticker.
     """
-    ticker_input = ticker_input.strip().upper()
-    if not ticker_input:
-        return None
+    sokterm = sokterm.strip()
+    if len(sokterm) < 2:
+        return []
     try:
-        aktie = yf.Ticker(ticker_input)
-        info = aktie.info
-        namn = info.get("shortName") or info.get("longName")
-        if not namn:
-            return None
-
-        # Gissning för Börskollen-riktkurs - stämmer ofta INTE (vi vet det
-        # efter mycket testande), men hamta_riktkurs hanterar redan en
-        # felaktig gissning snyggt utan att krascha.
-        borskollen_gissning = namn.lower().replace(" ", "-").replace(".", "").replace(",", "")
-
-        return {
-            "namn": namn,
-            "ticker": ticker_input,
-            "borskollen": borskollen_gissning,
-            "sok": namn.split()[0].rstrip(",.;:"),
-        }
+        traffar = yf.Search(sokterm, max_results=8).quotes
+        return [
+            t for t in traffar
+            if t.get("quoteType") == "EQUITY" and t.get("symbol") and (t.get("shortname") or t.get("longname"))
+        ]
     except Exception:
-        return None
+        return []
+
+
+def bolagsinfo_fran_traff(traff):
+    """
+    Bygger portföljinfo utifrån en träff från sok_bolag().
+    """
+    namn = traff.get("shortname") or traff.get("longname")
+    # Gissning för Börskollen-riktkurs - stämmer ofta INTE (vi vet det
+    # efter mycket testande), men hamta_riktkurs hanterar redan en
+    # felaktig gissning snyggt utan att krascha.
+    borskollen_gissning = namn.lower().replace(" ", "-").replace(".", "").replace(",", "")
+    return {
+        "namn": namn,
+        "ticker": traff["symbol"],
+        "borskollen": borskollen_gissning,
+        "sok": namn.split()[0].rstrip(",.;:"),
+    }
 
 
 # ================================================================
@@ -400,21 +439,35 @@ def hamta_fred_varde(series_id, api_key, units=None):
 
 with st.sidebar:
     st.header("Din portfölj")
-    ny_ticker_input = st.text_input(
-        "Lägg till en aktie (ticker)",
-        placeholder="t.ex. VOLV-B.ST eller AAPL",
+    sokterm_ny = st.text_input(
+        "Lägg till en aktie (sök på bolagsnamn)",
+        placeholder="t.ex. Volvo eller Apple",
     )
-    if st.button("➕ Lägg till", use_container_width=True):
-        info = validera_och_hamta_bolagsinfo(ny_ticker_input)
-        if info:
-            st.session_state.portfolj[info["namn"]] = {
-                "ticker": info["ticker"],
-                "borskollen": info["borskollen"],
-                "sok": info["sok"],
-            }
-            st.success(f"{info['namn']} tillagd!")
+
+    if sokterm_ny.strip():
+        traffar = sok_bolag(sokterm_ny)
+        if not traffar:
+            st.caption("Inga träffar - prova ett annat sökord.")
         else:
-            st.error("Hittade ingen aktie med den tickern - kolla stavningen.")
+            etiketter = [
+                f"{t.get('shortname') or t.get('longname')} ({t['symbol']}, {t.get('exchDisp', '-')})"
+                for t in traffar
+            ]
+            valt_index = st.selectbox(
+                "Välj rätt bolag/börs",
+                range(len(traffar)),
+                format_func=lambda i: etiketter[i],
+            )
+            if st.button("➕ Lägg till", use_container_width=True):
+                info = bolagsinfo_fran_traff(traffar[valt_index])
+                st.session_state.portfolj[info["namn"]] = {
+                    "ticker": info["ticker"],
+                    "borskollen": info["borskollen"],
+                    "sok": info["sok"],
+                    "malkurs": None,
+                }
+                spara_portfolj()
+                st.success(f"{info['namn']} tillagd!")
 
     st.divider()
     st.caption("Dina innehav:")
@@ -423,7 +476,53 @@ with st.sidebar:
         c1.write(namn)
         if c2.button("✕", key=f"tabort_{namn}"):
             del st.session_state.portfolj[namn]
+            spara_portfolj()
             st.rerun()
+
+    st.divider()
+    st.header("🔭 Bevakningslista")
+    st.caption("Bolag du inte äger än men vill hålla koll på.")
+    sokterm_bevakning = st.text_input(
+        "Lägg till en bevakning (sök på bolagsnamn)",
+        placeholder="t.ex. Volvo eller Apple",
+        key="sok_bevakning",
+    )
+
+    if sokterm_bevakning.strip():
+        traffar_bevakning = sok_bolag(sokterm_bevakning)
+        if not traffar_bevakning:
+            st.caption("Inga träffar - prova ett annat sökord.")
+        else:
+            etiketter_bevakning = [
+                f"{t.get('shortname') or t.get('longname')} ({t['symbol']}, {t.get('exchDisp', '-')})"
+                for t in traffar_bevakning
+            ]
+            valt_index_bevakning = st.selectbox(
+                "Välj rätt bolag/börs",
+                range(len(traffar_bevakning)),
+                format_func=lambda i: etiketter_bevakning[i],
+                key="valt_bevakning",
+            )
+            if st.button("➕ Lägg till bevakning", use_container_width=True):
+                info = bolagsinfo_fran_traff(traffar_bevakning[valt_index_bevakning])
+                st.session_state.bevakning[info["namn"]] = {
+                    "ticker": info["ticker"],
+                    "borskollen": info["borskollen"],
+                    "sok": info["sok"],
+                    "onskad_kop": None,
+                }
+                spara_bevakning()
+                st.success(f"{info['namn']} tillagd i bevakningslistan!")
+
+    if st.session_state.bevakning:
+        st.caption("Dina bevakade bolag:")
+        for namn in list(st.session_state.bevakning.keys()):
+            c1, c2 = st.columns([5, 1])
+            c1.write(namn)
+            if c2.button("✕", key=f"tabort_bevakning_{namn}"):
+                del st.session_state.bevakning[namn]
+                spara_bevakning()
+                st.rerun()
 
 
 # ================================================================
@@ -444,7 +543,7 @@ if not st.session_state.portfolj:
 vald_flik = st.tabs([
     "Översikt", "Nyheter & sentiment", "Nyckeltal", "Kursutveckling",
     "Riktkurser", "Teknisk analys", "Risk & korrelation", "Utdelningar",
-    "Makroekonomi",
+    "Makroekonomi", "🔭 Bevakningslista",
 ])
 PORTFOLJ = st.session_state.portfolj
 
@@ -452,13 +551,20 @@ PORTFOLJ = st.session_state.portfolj
 # ---------- Flik 1: Översikt ----------
 with vald_flik[0]:
     st.subheader("Snabböverblick över alla innehav")
+    st.caption(
+        "Tips: sätt en egen målkurs i sista kolumnen - du ser direkt i "
+        "\"Målkurs nådd\" om kursen har nått den."
+    )
     rader = []
     for namn, data in PORTFOLJ.items():
+        senaste_pris = None
+        valuta = "kr"
         try:
             hist, info = hamta_kursdata(data["ticker"])
             senaste_pris = hist["Close"].iloc[-1] if not hist.empty else None
+            valuta = info.get("currency") or "kr"
         except Exception:
-            senaste_pris = None
+            pass
 
         riktkurs_data = hamta_riktkurs(data["borskollen"])
         riktkurs = None
@@ -469,14 +575,52 @@ with vald_flik[0]:
         if riktkurs and senaste_pris:
             uppsida = (riktkurs - senaste_pris) / senaste_pris * 100
 
+        malkurs = data.get("malkurs")
+        malkurs_status = "–"
+        if malkurs and senaste_pris:
+            if senaste_pris >= malkurs:
+                malkurs_status = "✅ Nådd"
+            else:
+                malkurs_status = f"{(malkurs - senaste_pris) / senaste_pris * 100:.1f}% kvar"
+
         rader.append({
             "Bolag": namn,
-            "Kurs (kr)": round(senaste_pris, 1) if senaste_pris else None,
-            "Riktkurs (kr)": round(riktkurs, 1) if riktkurs else None,
+            "Kurs": f"{senaste_pris:.1f} {valuta}" if senaste_pris else None,
+            "Riktkurs": f"{riktkurs:.1f} {valuta}" if riktkurs else None,
             "Uppsida %": round(uppsida, 1) if uppsida is not None else None,
+            "Min målkurs (i aktiens valuta)": float(malkurs) if malkurs else np.nan,
+            "Målkurs nådd": malkurs_status,
         })
 
-    st.dataframe(pd.DataFrame(rader), use_container_width=True, hide_index=True)
+    oversikt_df = pd.DataFrame(rader)
+    redigerad_df = st.data_editor(
+        oversikt_df,
+        column_config={
+            "Bolag": st.column_config.TextColumn(disabled=True),
+            "Kurs": st.column_config.TextColumn(disabled=True),
+            "Riktkurs": st.column_config.TextColumn(disabled=True),
+            "Uppsida %": st.column_config.NumberColumn(disabled=True, format="%.1f"),
+            "Min målkurs (i aktiens valuta)": st.column_config.NumberColumn(
+                min_value=0.0, step=0.5, format="%.1f",
+                help="Din egen målkurs, i samma valuta som kursen (t.ex. USD för amerikanska "
+                     "aktier) - flaggas som nådd när kursen är på eller över detta.",
+            ),
+            "Målkurs nådd": st.column_config.TextColumn(disabled=True),
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="oversikt_malkurs_editor",
+    )
+
+    andrat = False
+    for i, namn in enumerate(PORTFOLJ.keys()):
+        ny_malkurs = redigerad_df.loc[i, "Min målkurs (i aktiens valuta)"]
+        ny_malkurs = float(ny_malkurs) if pd.notna(ny_malkurs) else None
+        if PORTFOLJ[namn].get("malkurs") != ny_malkurs:
+            PORTFOLJ[namn]["malkurs"] = ny_malkurs
+            andrat = True
+    if andrat:
+        spara_portfolj()
 
 
 # ---------- Flik 2: Nyheter & sentiment ----------
@@ -528,6 +672,7 @@ with vald_flik[2]:
             marg = info.get("profitMargins")
             roe = info.get("returnOnEquity")
             mcap = info.get("marketCap")
+            valuta_nyckeltal = info.get("currency") or "kr"
             nyckeltal_rader.append({
                 "Bolag": namn,
                 "P/E": flagga(info.get("trailingPE"), 100),
@@ -535,7 +680,7 @@ with vald_flik[2]:
                 "Direktavk. %": f"{div:.1f}" if div is not None else "–",
                 "Vinstmarg. %": f"{marg * 100:.1f}" if marg is not None else "–",
                 "ROE %": flagga(roe * 100 if roe is not None else None, 60),
-                "Börsvärde (mdr)": f"{mcap / 1e9:.1f}" if mcap else "–",
+                "Börsvärde (mdr)": f"{mcap / 1e9:.1f} {valuta_nyckeltal}" if mcap else "–",
             })
         except Exception:
             nyckeltal_rader.append({"Bolag": namn, "P/E": "fel", "P/B": "-", "Direktavk. %": "-", "Vinstmarg. %": "-", "ROE %": "-", "Börsvärde (mdr)": "-"})
@@ -545,16 +690,59 @@ with vald_flik[2]:
 
 # ---------- Flik 4: Kursutveckling ----------
 with vald_flik[3]:
-    st.subheader("Kursutveckling senaste året (normaliserat, start = 100)")
-    normaliserad_df = pd.DataFrame()
-    for namn, data in PORTFOLJ.items():
+    st.subheader("Kursutveckling senaste året")
+
+    vy = st.radio(
+        "Visa",
+        ["Alla bolag (jämförelse)", "Enskilt bolag"],
+        horizontal=True,
+        key="kursutv_vy",
+    )
+
+    if vy == "Alla bolag (jämförelse)":
+        st.caption("Normaliserat, start = 100 - för att kunna jämföra utveckling oavsett kurs.")
+        visa_index_alla = st.checkbox("Jämför med index (OMXS30)", value=True, key="visa_index_alla")
+        normaliserad_df = pd.DataFrame()
+        for namn, data in PORTFOLJ.items():
+            try:
+                hist, _ = hamta_kursdata(data["ticker"])
+                if not hist.empty:
+                    normaliserad_df[namn] = hist["Close"] / hist["Close"].iloc[0] * 100
+            except Exception:
+                continue
+        if visa_index_alla:
+            try:
+                index_hist = hamta_index_historik()
+                if not index_hist.empty:
+                    normaliserad_df["OMXS30 (index)"] = index_hist["Close"] / index_hist["Close"].iloc[0] * 100
+            except Exception:
+                pass
+        st.line_chart(normaliserad_df)
+    else:
+        valt_bolag_kurs = st.selectbox("Välj bolag", list(PORTFOLJ.keys()), key="kursutv_bolag")
+        jamfor_index_enskilt = st.checkbox(
+            "Jämför med index (OMXS30, normaliserat)", value=False, key="jamfor_index_enskilt",
+        )
+        ticker_kurs = PORTFOLJ[valt_bolag_kurs]["ticker"]
         try:
-            hist, _ = hamta_kursdata(data["ticker"])
-            if not hist.empty:
-                normaliserad_df[namn] = hist["Close"] / hist["Close"].iloc[0] * 100
-        except Exception:
-            continue
-    st.line_chart(normaliserad_df)
+            hist, _ = hamta_kursdata(ticker_kurs)
+            if hist.empty:
+                st.warning("Ingen kursdata hittades för det här bolaget.")
+            elif jamfor_index_enskilt:
+                jamforelse_df = pd.DataFrame()
+                jamforelse_df[valt_bolag_kurs] = hist["Close"] / hist["Close"].iloc[0] * 100
+                try:
+                    index_hist = hamta_index_historik()
+                    if not index_hist.empty:
+                        jamforelse_df["OMXS30 (index)"] = index_hist["Close"] / index_hist["Close"].iloc[0] * 100
+                except Exception:
+                    pass
+                st.caption("Normaliserat, start = 100.")
+                st.line_chart(jamforelse_df)
+            else:
+                st.line_chart(hist["Close"].rename(valt_bolag_kurs))
+        except Exception as e:
+            st.error(f"Kunde inte hämta kursdata: {e}")
 
 
 # ---------- Flik 5: Riktkurser ----------
@@ -568,6 +756,12 @@ with vald_flik[4]:
     riktkurs_rader = []
     for namn, data in PORTFOLJ.items():
         resultat = hamta_riktkurs(data["borskollen"])
+        try:
+            _, info_riktkurs = hamta_kursdata(data["ticker"])
+            valuta = info_riktkurs.get("currency") or "kr"
+        except Exception:
+            valuta = "kr"
+
         if resultat is None:
             riktkurs_rader.append({"Bolag": namn, "Riktkurs": "hittades inte", "Analytikersentiment": "-"})
         elif resultat.get("ingen_bevakning"):
@@ -575,7 +769,7 @@ with vald_flik[4]:
         else:
             riktkurs_rader.append({
                 "Bolag": namn,
-                "Riktkurs": f"{resultat['riktkurs']:.1f} kr" if resultat.get("riktkurs") else "-",
+                "Riktkurs": f"{resultat['riktkurs']:.1f} {valuta}" if resultat.get("riktkurs") else "-",
                 "Analytikersentiment": sentiment_till_text(resultat.get("sentiments")),
             })
     st.dataframe(pd.DataFrame(riktkurs_rader), use_container_width=True, hide_index=True)
@@ -588,8 +782,9 @@ with vald_flik[5]:
     ticker_tech = PORTFOLJ[valt_bolag_tech]["ticker"]
 
     try:
-        hist, _ = hamta_kursdata(ticker_tech)
+        hist, info_tech = hamta_kursdata(ticker_tech)
         close = hist["Close"]
+        valuta_tech = info_tech.get("currency") or "kr"
 
         if len(close) < 30:
             st.warning("För lite historik för meningsfull teknisk analys.")
@@ -629,12 +824,12 @@ with vald_flik[5]:
                 help="Skillnaden mellan ett kort och ett långt glidande medelvärde - visar momentum.",
             )
             col3.metric(
-                "ATR (kr)", f"{atr.iloc[-1]:.2f}",
+                f"ATR ({valuta_tech})", f"{atr.iloc[-1]:.2f}",
                 help="Genomsnittlig daglig prisrörelse senaste 14 dagarna - mått på volatilitet.",
             )
 
             st.markdown(
-                f"**Bollinger Bands:** pris {senaste_pris:.1f} kr är {bollinger_tolkning} "
+                f"**Bollinger Bands:** pris {senaste_pris:.1f} {valuta_tech} är {bollinger_tolkning} "
                 f"(övre: {ovre_band.iloc[-1]:.1f}, nedre: {nedre_band.iloc[-1]:.1f})"
             )
             st.markdown(f"**Golden/Death Cross:** {golden_death_status(close)}")
@@ -782,3 +977,101 @@ with vald_flik[8]:
                 "Status": fel if fel else "OK",
             })
         st.dataframe(pd.DataFrame(makro_rader), use_container_width=True, hide_index=True)
+
+
+# ---------- Flik 10: Bevakningslista ----------
+with vald_flik[9]:
+    st.subheader("Bevakningslista")
+    st.caption(
+        "Bolag du inte äger än men vill hålla koll på inför en framtida "
+        "investering. Sätt en önskad köpkurs så ser du direkt i \"Köpläge\" "
+        "om kursen har nått ner till den."
+    )
+
+    if not st.session_state.bevakning:
+        st.info("Bevakningslistan är tom - lägg till en aktie i sidopanelen.")
+    else:
+        BEVAKNING = st.session_state.bevakning
+        bevakning_rader = []
+        for namn, data in BEVAKNING.items():
+            senaste_pris = None
+            valuta = "kr"
+            try:
+                hist, info = hamta_kursdata(data["ticker"])
+                senaste_pris = hist["Close"].iloc[-1] if not hist.empty else None
+                valuta = info.get("currency") or "kr"
+            except Exception:
+                pass
+
+            riktkurs_data = hamta_riktkurs(data["borskollen"])
+            riktkurs = None
+            if riktkurs_data and not riktkurs_data.get("ingen_bevakning"):
+                riktkurs = riktkurs_data.get("riktkurs")
+
+            onskad_kop = data.get("onskad_kop")
+            kopläge_status = "–"
+            if onskad_kop and senaste_pris:
+                if senaste_pris <= onskad_kop:
+                    kopläge_status = "✅ Läge att köpa"
+                else:
+                    kopläge_status = f"{(senaste_pris - onskad_kop) / onskad_kop * 100:.1f}% kvar ner"
+
+            bevakning_rader.append({
+                "Bolag": namn,
+                "Kurs": f"{senaste_pris:.1f} {valuta}" if senaste_pris else None,
+                "Riktkurs": f"{riktkurs:.1f} {valuta}" if riktkurs else None,
+                "Önskad köpkurs (i aktiens valuta)": float(onskad_kop) if onskad_kop else np.nan,
+                "Köpläge": kopläge_status,
+            })
+
+        bevakning_df = pd.DataFrame(bevakning_rader)
+        redigerad_bevakning_df = st.data_editor(
+            bevakning_df,
+            column_config={
+                "Bolag": st.column_config.TextColumn(disabled=True),
+                "Kurs": st.column_config.TextColumn(disabled=True),
+                "Riktkurs": st.column_config.TextColumn(disabled=True),
+                "Önskad köpkurs (i aktiens valuta)": st.column_config.NumberColumn(
+                    min_value=0.0, step=0.5, format="%.1f",
+                    help="Kursen du vill köpa vid, i samma valuta som kursen (t.ex. USD för "
+                         "amerikanska aktier) - flaggas som köpläge när kursen är på eller under detta.",
+                ),
+                "Köpläge": st.column_config.TextColumn(disabled=True),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="bevakning_kop_editor",
+        )
+
+        andrat_bevakning = False
+        for i, namn in enumerate(BEVAKNING.keys()):
+            ny_onskad_kop = redigerad_bevakning_df.loc[i, "Önskad köpkurs (i aktiens valuta)"]
+            ny_onskad_kop = float(ny_onskad_kop) if pd.notna(ny_onskad_kop) else None
+            if BEVAKNING[namn].get("onskad_kop") != ny_onskad_kop:
+                BEVAKNING[namn]["onskad_kop"] = ny_onskad_kop
+                andrat_bevakning = True
+        if andrat_bevakning:
+            spara_bevakning()
+
+        st.divider()
+        st.caption("Bestämt dig för att köpa, eller vill ta bort en bevakning?")
+        for namn in list(BEVAKNING.keys()):
+            c1, c2, c3 = st.columns([4, 2, 2])
+            c1.write(namn)
+            if c2.button("➕ Flytta till portfölj", key=f"flytta_{namn}"):
+                flyttad_data = BEVAKNING[namn]
+                st.session_state.portfolj[namn] = {
+                    "ticker": flyttad_data["ticker"],
+                    "borskollen": flyttad_data["borskollen"],
+                    "sok": flyttad_data["sok"],
+                    "malkurs": None,
+                }
+                del st.session_state.bevakning[namn]
+                spara_portfolj()
+                spara_bevakning()
+                st.success(f"{namn} flyttad till portföljen!")
+                st.rerun()
+            if c3.button("✕ Ta bort", key=f"tabort_bevakning_tab_{namn}"):
+                del st.session_state.bevakning[namn]
+                spara_bevakning()
+                st.rerun()
