@@ -8,7 +8,8 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-from services import persistence_service, transactions_service, ai_coach_service
+from services import persistence_service, transactions_service, ai_coach_service, report_service
+from services.gemini_service import GEMINI_API_KEY
 from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik
 from services.sentiment_service import hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment
 from services.riktkurs_service import hamta_riktkurs, sentiment_till_text
@@ -278,6 +279,61 @@ def render_ai_coach(PORTFOLJ):
 
     if st.session_state.get("ai_sammanfattning"):
         st.markdown(st.session_state.ai_sammanfattning)
+
+
+def render_rapporter(PORTFOLJ):
+    st.subheader("📄 Rapportsammanfattningar")
+    st.caption(
+        "AI-sammanfattning av bolagets senaste kvartalsrapport, baserat på faktiska "
+        "nyckeltal (omsättning, resultat) hämtade från Yahoo Finance - inte gissningar."
+    )
+
+    valt_bolag = st.selectbox("Välj bolag", list(PORTFOLJ.keys()), key="rapport_val")
+    ticker = PORTFOLJ[valt_bolag]["ticker"]
+    kvartalsdata = report_service.hamta_kvartalsdata(ticker)
+
+    if not kvartalsdata or len(kvartalsdata["kvartal"]) < 2:
+        st.info("Kunde inte hitta tillräckligt med kvartalsdata för det här bolaget.")
+        return
+
+    if kvartalsdata["nasta_rapportdatum"]:
+        st.caption(f"Nästa rapportdatum (uppskattat): {kvartalsdata['nasta_rapportdatum']}")
+
+    valuta = kvartalsdata["valuta"]
+    tabell_rader = []
+    for rad in kvartalsdata["kvartal"]:
+        formaterad = {"Kvartal": rad["datum"]}
+        for namn in report_service.NYCKELTAL.values():
+            varde = rad.get(namn)
+            if varde is None:
+                formaterad[namn] = "–"
+            elif namn == "Resultat per aktie":
+                formaterad[namn] = f"{varde:.2f} {valuta}"
+            else:
+                formaterad[namn] = f"{varde:,.0f} {valuta}".replace(",", " ")
+        tabell_rader.append(formaterad)
+    st.dataframe(pd.DataFrame(tabell_rader), use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    if not GEMINI_API_KEY:
+        st.warning(
+            "Ingen Gemini API-nyckel konfigurerad. Se \"🤖 AI-coach\"-fliken för "
+            "instruktioner om hur du lägger till en."
+        )
+        return
+
+    if st.button("✨ Sammanfatta senaste rapporten", key=f"rapport_btn_{valt_bolag}"):
+        with st.spinner("Läser rapporten..."):
+            text, fel = report_service.generera_rapportsammanfattning(valt_bolag, kvartalsdata)
+        if fel:
+            st.error(f"Kunde inte hämta sammanfattning: {fel}")
+        else:
+            st.session_state[f"rapport_sammanfattning_{valt_bolag}"] = text
+
+    sparad_text = st.session_state.get(f"rapport_sammanfattning_{valt_bolag}")
+    if sparad_text:
+        st.markdown(sparad_text)
 
 
 def render_nyheter_sentiment(PORTFOLJ):

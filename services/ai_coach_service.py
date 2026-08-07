@@ -14,9 +14,7 @@ import streamlit as st
 from services import transactions_service
 from services.market_data_service import hamta_kursdata
 from services.risk_service import berakna_volatilitet, berakna_max_drawdown
-
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-GEMINI_MODELL = "gemini-flash-latest"
+from services.gemini_service import GEMINI_API_KEY, generera_text
 
 
 def berakna_portfoljscore(portfolj):
@@ -108,19 +106,4 @@ Skriv på svenska, kort (max ca 150 ord), i tre korta stycken utan rubriker:
 
 
 def generera_ai_sammanfattning(portfolj, score_data):
-    """Returnerar (text, felmeddelande) - exakt en av de två är satt."""
-    if not GEMINI_API_KEY:
-        return None, "Ingen Gemini API-nyckel konfigurerad."
-    try:
-        from google import genai
-    except ImportError:
-        return None, "Paketet google-genai är inte installerat."
-
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        svar = client.models.generate_content(
-            model=GEMINI_MODELL, contents=_bygg_prompt(portfolj, score_data),
-        )
-        return svar.text, None
-    except Exception as e:
-        return None, str(e)
+    return generera_text(_bygg_prompt(portfolj, score_data))
