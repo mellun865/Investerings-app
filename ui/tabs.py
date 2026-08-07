@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-from services import persistence_service, transactions_service
+from services import persistence_service, transactions_service, ai_coach_service
 from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik
 from services.sentiment_service import hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment
 from services.riktkurs_service import hamta_riktkurs, sentiment_till_text
@@ -225,6 +225,59 @@ def render_historik(PORTFOLJ):
     c3.metric("Största nedgång (drawdown)", f"{max_drawdown:.1f} %")
 
     st.line_chart(historik_df["varde"])
+
+
+def render_ai_coach(PORTFOLJ):
+    st.subheader("🤖 AI-portföljcoach")
+    st.caption(
+        "Portföljscoren räknas alltid ut lokalt utifrån dina siffror (diversifiering, "
+        "risk, historisk utveckling). Sammanfattningen nedan skrivs av Google Gemini "
+        "utifrån exakt dessa siffror - inget annat om dig eller din portfölj skickas iväg."
+    )
+
+    score_data = ai_coach_service.berakna_portfoljscore(PORTFOLJ)
+    if not score_data["antal_bolag"]:
+        st.info(
+            "Inga innehav med registrerade transaktioner ännu - logga köp under "
+            "\"💰 Transaktioner\" för att få en portföljscore."
+        )
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Portföljscore", f"{score_data['score']} / 100")
+    c2.metric(
+        "Största innehavets andel",
+        f"{score_data['storsta_andel_pct']} %" if score_data["storsta_andel_pct"] is not None else "–",
+    )
+    c3.metric(
+        "Snittvolatilitet",
+        f"{score_data['snitt_volatilitet_pct']} %" if score_data["snitt_volatilitet_pct"] is not None else "–",
+    )
+    c4.metric(
+        "Max drawdown (historik)",
+        f"{score_data['max_drawdown_pct']} %" if score_data["max_drawdown_pct"] is not None else "–",
+    )
+
+    st.divider()
+
+    if not ai_coach_service.GEMINI_API_KEY:
+        st.warning(
+            "Ingen Gemini API-nyckel konfigurerad. Skapa en gratis nyckel på "
+            "aistudio.google.com/apikey och lägg till den som GEMINI_API_KEY i "
+            ".streamlit/secrets.toml (lokalt) eller Streamlit Cloud → Settings → Secrets."
+        )
+        return
+
+    if st.button("✨ Generera AI-sammanfattning"):
+        with st.spinner("Coachen tänker..."):
+            text, fel = ai_coach_service.generera_ai_sammanfattning(PORTFOLJ, score_data)
+        if fel:
+            st.error(f"Kunde inte hämta AI-sammanfattning: {fel}")
+        else:
+            st.session_state.ai_sammanfattning = text
+
+    if st.session_state.get("ai_sammanfattning"):
+        st.markdown(st.session_state.ai_sammanfattning)
 
 
 def render_nyheter_sentiment(PORTFOLJ):
