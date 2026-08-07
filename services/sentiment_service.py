@@ -2,14 +2,19 @@
 Sentimentanalys av nyhetsrubriker samt hämtning av nyheter per bolag.
 """
 
+import json
+import re
 import urllib.parse
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 import requests
 import streamlit as st
+from bs4 import BeautifulSoup
 
 from services.gemini_service import generera_text
+
+_GOOGLEBOT_UA = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 
 
 def stamform(ord):
@@ -136,3 +141,88 @@ Skriv 2-3 korta meningar på svenska: vad rubriken sannolikt handlar om för
 {bolag} och varför det kan vara relevant för en aktieägare. Ge ingen
 köp-/säljrekommendation."""
     return generera_text(prompt)
+
+
+def _avkoda_google_news_lank(lank):
+    """Avkodar en Google News RSS-omdirigeringslänk till artikelns riktiga
+    URL. Bygger på att efterlikna ett internt, odokumenterat Google-anrop
+    (samma teknik som community-verktyg för det här använder) - INTE ett
+    officiellt API, så det kan sluta fungera om Google ändrar sitt format.
+    En Googlebot-User-Agent kringgår Googles cookie-samtyckessida, som
+    annars blockerar vanliga anrop."""
+    sida = requests.get(lank, headers={"User-Agent": _GOOGLEBOT_UA}, timeout=10)
+    signatur = re.search(r'data-n-a-sg="([^"]+)"', sida.text)
+    tidsstampel = re.search(r'data-n-a-ts="([^"]+)"', sida.text)
+    artikel_id = re.search(r'data-n-a-id="([^"]+)"', sida.text)
+    if not (signatur and tidsstampel and artikel_id):
+        return None
+
+    nyttolast = [
+        "Fbv4je",
+        '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",'
+        'null,1,null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,'
+        f'null,0,0,null,0],"{artikel_id.group(1)}",{tidsstampel.group(1)},'
+        f'"{signatur.group(1)}"]',
+    ]
+    svar = requests.post(
+        "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+        headers={
+            "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "user-agent": _GOOGLEBOT_UA,
+        },
+        data={"f.req": json.dumps([[nyttolast]])},
+        timeout=10,
+    )
+    kropp = svar.text.split("\n\n", 1)[1]
+    inre = json.loads(json.loads(kropp)[0][2])
+    return inre[1]
+
+
+def _hamta_artikeltext(url, max_tecken=6000):
+    sida = requests.get(
+        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=10,
+    )
+    soup = BeautifulSoup(sida.text, "html.parser")
+    stycken = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
+    text = "\n".join(s for s in stycken if len(s) > 40)
+    return text[:max_tecken] if text else None
+
+
+def _bygg_artikel_prompt(bolag, nyhet, artikeltext):
+    return f"""Du är en nykter, pedagogisk nyhetsanalytiker för en svensk
+privatsparare. Nedan är den fulla artikeltexten om {bolag} - sammanfatta
+ENDAST det som faktiskt står där, hitta inte på något extra, och ge ingen
+köp-/säljrekommendation.
+
+Rubrik: "{nyhet['titel']}"
+Källa: {nyhet.get('kalla') or 'okänd'}
+Datum: {nyhet.get('datum') or 'okänt'}
+
+Artikeltext:
+{artikeltext}
+
+Skriv på svenska, kort (max ca 130 ord), i löpande text: vad handlar
+artikeln om, och varför kan det vara relevant för en {bolag}-aktieägare."""
+
+
+def generera_nyhetssammanfattning(bolag, nyhet):
+    """Försöker sammanfatta HELA artikeln: avkodar Google News-länken och
+    hämtar sidans text. Går det inte (betalvägg, avkodningen misslyckas,
+    för lite text hittas) faller den tillbaka på att bara tolka rubriken.
+    Returnerar (text, felmeddelande, helartikel) - helartikel är True om
+    sammanfattningen bygger på den faktiska artikeltexten."""
+    artikeltext = None
+    try:
+        if nyhet.get("lank"):
+            verklig_url = _avkoda_google_news_lank(nyhet["lank"])
+            if verklig_url:
+                artikeltext = _hamta_artikeltext(verklig_url)
+    except Exception:
+        artikeltext = None
+
+    if artikeltext and len(artikeltext) > 300:
+        text, fel = generera_text(_bygg_artikel_prompt(bolag, nyhet, artikeltext))
+        return text, fel, True
+
+    text, fel = generera_nyhetstolkning(bolag, nyhet)
+    return text, fel, False

@@ -12,7 +12,7 @@ from services import persistence_service, transactions_service, ai_coach_service
 from services.gemini_service import GEMINI_API_KEY
 from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik, hamta_yahoo_nyheter
 from services.sentiment_service import (
-    hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment, generera_nyhetstolkning,
+    hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment, generera_nyhetssammanfattning,
 )
 from services.riktkurs_service import hamta_riktkurs, sentiment_till_text
 from services.technical_service import (
@@ -350,18 +350,27 @@ def render_rapporter(PORTFOLJ):
 
 @st.fragment
 def _nyhetstolkning_fragment(bolag, nyhet, key):
-    knapp_key = f"nyhetstolkning_btn_{key}"
-    text_key = f"nyhetstolkning_text_{key}"
-    if st.button("✨ AI-tolkning av rubriken", key=knapp_key):
-        with st.spinner("Tolkar..."):
-            text, fel = generera_nyhetstolkning(bolag, nyhet)
+    knapp_key = f"nyhetssammanfattning_btn_{key}"
+    text_key = f"nyhetssammanfattning_text_{key}"
+    helartikel_key = f"nyhetssammanfattning_helartikel_{key}"
+
+    if st.button("✨ Sammanfatta nyheten", key=knapp_key):
+        with st.spinner("Läser artikeln..."):
+            text, fel, helartikel = generera_nyhetssammanfattning(bolag, nyhet)
         if fel:
-            st.error(f"Kunde inte hämta tolkning: {fel}")
+            st.error(f"Kunde inte hämta sammanfattning: {fel}")
         else:
             st.session_state[text_key] = text
+            st.session_state[helartikel_key] = helartikel
 
     if st.session_state.get(text_key):
-        st.caption("Vad rubriken sannolikt betyder (AI-tolkning av rubriken, inte artikeln):")
+        if st.session_state.get(helartikel_key):
+            st.caption("📄 AI-sammanfattning av hela artikeln:")
+        else:
+            st.caption(
+                "Kunde inte läsa hela artikeln (t.ex. betalvägg) - AI-tolkning av bara "
+                "rubriken istället:"
+            )
         st.markdown(st.session_state[text_key])
 
 
