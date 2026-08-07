@@ -25,6 +25,7 @@ STARTPORTFOLJ = {
 _PROJEKT_ROT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORTFOLJ_FIL = os.path.join(_PROJEKT_ROT, "portfolj_data.json")
 BEVAKNING_FIL = os.path.join(_PROJEKT_ROT, "bevakning_data.json")
+TRANSAKTIONER_FIL = os.path.join(_PROJEKT_ROT, "transaktioner_data.json")
 
 
 def spara_lista(session_nyckel, fil):
@@ -50,8 +51,14 @@ def spara_bevakning():
     spara_lista("bevakning", BEVAKNING_FIL)
 
 
+def spara_transaktioner():
+    spara_lista("transaktioner", TRANSAKTIONER_FIL)
+
+
 def init_session_state():
     if "portfolj" not in st.session_state:
         st.session_state.portfolj = ladda_lista(PORTFOLJ_FIL, dict(STARTPORTFOLJ))
     if "bevakning" not in st.session_state:
         st.session_state.bevakning = ladda_lista(BEVAKNING_FIL, {})
+    if "transaktioner" not in st.session_state:
+        st.session_state.transaktioner = ladda_lista(TRANSAKTIONER_FIL, [])

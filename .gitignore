@@ -6,3 +6,4 @@ __pycache__/
 # Lokal portfölj-/bevakningsdata - användarspecifikt, inte kod
 portfolj_data.json
 bevakning_data.json
+transaktioner_data.json

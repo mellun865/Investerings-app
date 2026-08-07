@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-from services import persistence_service
+from services import persistence_service, transactions_service
 from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik
 from services.sentiment_service import hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment
 from services.riktkurs_service import hamta_riktkurs, sentiment_till_text
@@ -26,7 +26,11 @@ def render_oversikt(PORTFOLJ):
         "Tips: sätt en egen målkurs i sista kolumnen - du ser direkt i "
         "\"Målkurs nådd\" om kursen har nått den."
     )
+    innehav = transactions_service.berakna_innehav(st.session_state.transaktioner)
+
     rader = []
+    totalt_marknadsvarde = 0.0
+    totalt_anskaffningsvarde = 0.0
     for namn, data in PORTFOLJ.items():
         senaste_pris = None
         valuta = "kr"
@@ -54,21 +58,51 @@ def render_oversikt(PORTFOLJ):
             else:
                 malkurs_status = f"{(malkurs - senaste_pris) / senaste_pris * 100:.1f}% kvar"
 
+        bolagsinnehav = innehav.get(namn)
+        antal_aktier = bolagsinnehav["antal"] if bolagsinnehav else 0.0
+        gav = bolagsinnehav["gav"] if bolagsinnehav else 0.0
+        marknadsvarde = antal_aktier * senaste_pris if (antal_aktier and senaste_pris) else None
+        oreal_vinst_pct = None
+        if antal_aktier and gav and senaste_pris:
+            oreal_vinst_pct = (senaste_pris - gav) / gav * 100
+            totalt_marknadsvarde += marknadsvarde
+            totalt_anskaffningsvarde += antal_aktier * gav
+
         rader.append({
             "Bolag": namn,
+            "Antal aktier": round(antal_aktier, 4) if antal_aktier else None,
+            "GAV": f"{gav:.2f} {valuta}" if antal_aktier else None,
             "Kurs": f"{senaste_pris:.1f} {valuta}" if senaste_pris else None,
+            "Marknadsvärde": f"{marknadsvarde:,.0f} {valuta}".replace(",", " ") if marknadsvarde else None,
+            "Orealiserad vinst %": round(oreal_vinst_pct, 1) if oreal_vinst_pct is not None else None,
             "Riktkurs": f"{riktkurs:.1f} {valuta}" if riktkurs else None,
             "Uppsida %": round(uppsida, 1) if uppsida is not None else None,
             "Min målkurs (i aktiens valuta)": float(malkurs) if malkurs else np.nan,
             "Målkurs nådd": malkurs_status,
         })
 
+    if totalt_anskaffningsvarde:
+        totalt_vinst_pct = (totalt_marknadsvarde - totalt_anskaffningsvarde) / totalt_anskaffningsvarde * 100
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Totalt marknadsvärde", f"{totalt_marknadsvarde:,.0f} kr".replace(",", " "))
+        c2.metric("Totalt anskaffningsvärde", f"{totalt_anskaffningsvarde:,.0f} kr".replace(",", " "))
+        c3.metric("Orealiserad vinst", f"{totalt_vinst_pct:+.1f} %")
+    else:
+        st.info(
+            "Inga transaktioner loggade än, så antal aktier/marknadsvärde saknas nedan. "
+            "Logga dina köp under fliken \"💰 Transaktioner\" för att få dessa siffror."
+        )
+
     oversikt_df = pd.DataFrame(rader)
     redigerad_df = st.data_editor(
         oversikt_df,
         column_config={
             "Bolag": st.column_config.TextColumn(disabled=True),
+            "Antal aktier": st.column_config.NumberColumn(disabled=True),
+            "GAV": st.column_config.TextColumn(disabled=True),
             "Kurs": st.column_config.TextColumn(disabled=True),
+            "Marknadsvärde": st.column_config.TextColumn(disabled=True),
+            "Orealiserad vinst %": st.column_config.NumberColumn(disabled=True, format="%.1f"),
             "Riktkurs": st.column_config.TextColumn(disabled=True),
             "Uppsida %": st.column_config.NumberColumn(disabled=True, format="%.1f"),
             "Min målkurs (i aktiens valuta)": st.column_config.NumberColumn(
@@ -92,6 +126,70 @@ def render_oversikt(PORTFOLJ):
             andrat = True
     if andrat:
         persistence_service.spara_portfolj()
+
+
+def render_transaktioner(PORTFOLJ):
+    st.subheader("Transaktioner")
+    st.caption(
+        "Logga dina köp, sälj, utdelningar och splitar. Det här är grunden för "
+        "antal aktier, anskaffningsvärde (GAV) och verklig avkastning i \"Översikt\"."
+    )
+
+    st.markdown("##### Lägg till transaktion")
+    c1, c2, c3 = st.columns(3)
+    bolag = c1.selectbox("Bolag", list(PORTFOLJ.keys()), key="transaktion_bolag")
+    typ = c2.selectbox("Typ", transactions_service.TYPER, key="transaktion_typ")
+    datum = c3.date_input("Datum", value=datetime.date.today(), key="transaktion_datum")
+
+    with st.form("ny_transaktion_form", clear_on_submit=True):
+        if typ in ("Köp", "Sälj"):
+            fc1, fc2, fc3 = st.columns(3)
+            antal = fc1.number_input("Antal aktier", min_value=0.0, step=1.0)
+            pris = fc2.number_input("Pris per aktie (i aktiens valuta)", min_value=0.0, step=0.5)
+            avgift = fc3.number_input("Avgift/courtage", min_value=0.0, step=1.0, value=0.0)
+        elif typ == "Utdelning":
+            antal = st.number_input("Totalt utdelningsbelopp (i aktiens valuta)", min_value=0.0, step=1.0)
+            pris, avgift = 0.0, 0.0
+        else:
+            antal = st.number_input(
+                "Splitfaktor (t.ex. 2 för 2:1-split, 0.5 för omvänd split 1:2)",
+                min_value=0.0, step=0.5, value=2.0,
+            )
+            pris, avgift = 0.0, 0.0
+
+        if st.form_submit_button("➕ Lägg till transaktion"):
+            transactions_service.lagg_till_transaktion(bolag, typ, datum, antal, pris, avgift)
+            persistence_service.spara_transaktioner()
+            st.success("Transaktion tillagd!")
+            st.rerun()
+
+    st.divider()
+    st.markdown("##### Historik")
+    if not st.session_state.transaktioner:
+        st.caption("Inga transaktioner loggade än.")
+    else:
+        ordnade = sorted(
+            enumerate(st.session_state.transaktioner),
+            key=lambda pair: pair[1]["datum"],
+            reverse=True,
+        )
+        for orig_index, t in ordnade:
+            if t["typ"] in ("Köp", "Sälj"):
+                detaljer = f"{t['antal']:g} st à {t['pris']:g} (avgift {t['avgift']:g})"
+            elif t["typ"] == "Utdelning":
+                detaljer = f"{t['antal']:g}"
+            else:
+                detaljer = f"Faktor {t['antal']:g}"
+
+            c1, c2, c3, c4, c5 = st.columns([1.3, 2, 1.3, 3, 0.6])
+            c1.write(t["datum"])
+            c2.write(t["bolag"])
+            c3.write(t["typ"])
+            c4.write(detaljer)
+            if c5.button("✕", key=f"tabort_transaktion_{orig_index}"):
+                transactions_service.ta_bort_transaktion(orig_index)
+                persistence_service.spara_transaktioner()
+                st.rerun()
 
 
 def render_nyheter_sentiment(PORTFOLJ):
