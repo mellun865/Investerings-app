@@ -192,6 +192,41 @@ def render_transaktioner(PORTFOLJ):
                 st.rerun()
 
 
+def render_historik(PORTFOLJ):
+    st.subheader("Portföljens utveckling över tid")
+    st.caption(
+        "En punkt läggs till automatiskt varje dag du öppnar appen - historiken byggs "
+        "alltså upp framåt i tiden och saknar data bakåt innan du började logga."
+    )
+
+    historik = st.session_state.portfolj_historik
+    if len(historik) < 2:
+        st.info(
+            "För få datapunkter ännu. Öppna appen på olika dagar så byggs en graf upp "
+            "här av sig själv - inget mer du behöver göra."
+        )
+        return
+
+    historik_df = pd.DataFrame(historik)
+    historik_df["datum"] = pd.to_datetime(historik_df["datum"])
+    historik_df = historik_df.set_index("datum")
+
+    forsta_varde = historik_df["varde"].iloc[0]
+    sista_varde = historik_df["varde"].iloc[-1]
+    forandring_pct = (sista_varde - forsta_varde) / forsta_varde * 100 if forsta_varde else None
+    max_drawdown = berakna_max_drawdown(historik_df["varde"])
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Senaste portföljvärde", f"{sista_varde:,.0f} kr".replace(",", " "))
+    c2.metric(
+        "Utveckling sedan första loggade dagen",
+        f"{forandring_pct:+.1f} %" if forandring_pct is not None else "–",
+    )
+    c3.metric("Största nedgång (drawdown)", f"{max_drawdown:.1f} %")
+
+    st.line_chart(historik_df["varde"])
+
+
 def render_nyheter_sentiment(PORTFOLJ):
     st.subheader("Senaste relevanta nyheter per bolag")
     valt_bolag = st.selectbox("Välj bolag", list(PORTFOLJ.keys()), key="nyheter_val")
