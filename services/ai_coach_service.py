@@ -16,7 +16,7 @@ from services.market_data_service import hamta_kursdata
 from services.risk_service import berakna_volatilitet, berakna_max_drawdown
 
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-GEMINI_MODELL = "gemini-2.5-flash"
+GEMINI_MODELL = "gemini-flash-latest"
 
 
 def berakna_portfoljscore(portfolj):
