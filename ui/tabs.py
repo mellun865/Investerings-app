@@ -10,8 +10,10 @@ import streamlit as st
 
 from services import persistence_service, transactions_service, ai_coach_service, report_service
 from services.gemini_service import GEMINI_API_KEY
-from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik
-from services.sentiment_service import hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment
+from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik, hamta_yahoo_nyheter
+from services.sentiment_service import (
+    hamta_nyheter_for_bolag, ar_troligen_relevant, analysera_sentiment, generera_nyhetstolkning,
+)
 from services.riktkurs_service import hamta_riktkurs, sentiment_till_text
 from services.technical_service import (
     berakna_rsi, berakna_macd, berakna_bollinger, berakna_atr, golden_death_status,
@@ -346,23 +348,71 @@ def render_rapporter(PORTFOLJ):
     _rapport_sammanfattning_fragment(valt_bolag, kvartalsdata)
 
 
+@st.fragment
+def _nyhetstolkning_fragment(bolag, nyhet, key):
+    knapp_key = f"nyhetstolkning_btn_{key}"
+    text_key = f"nyhetstolkning_text_{key}"
+    if st.button("✨ AI-tolkning av rubriken", key=knapp_key):
+        with st.spinner("Tolkar..."):
+            text, fel = generera_nyhetstolkning(bolag, nyhet)
+        if fel:
+            st.error(f"Kunde inte hämta tolkning: {fel}")
+        else:
+            st.session_state[text_key] = text
+
+    if st.session_state.get(text_key):
+        st.caption("Vad rubriken sannolikt betyder (AI-tolkning av rubriken, inte artikeln):")
+        st.markdown(st.session_state[text_key])
+
+
 def render_nyheter_sentiment(PORTFOLJ):
     st.subheader("Senaste relevanta nyheter per bolag")
     valt_bolag = st.selectbox("Välj bolag", list(PORTFOLJ.keys()), key="nyheter_val")
     sokterm = PORTFOLJ[valt_bolag]["sok"]
+    ticker = PORTFOLJ[valt_bolag]["ticker"]
+
+    if not GEMINI_API_KEY:
+        st.caption(
+            "Ingen Gemini API-nyckel konfigurerad, så AI-tolkning av rubriker är avstängd "
+            "(se \"🤖 AI-coach\"-fliken för instruktioner)."
+        )
 
     try:
-        alla_rubriker = hamta_nyheter_for_bolag(sokterm)
-        relevanta = [r for r in alla_rubriker if ar_troligen_relevant(sokterm, r)]
+        alla_nyheter = hamta_nyheter_for_bolag(sokterm)
+        relevanta = [n for n in alla_nyheter if ar_troligen_relevant(sokterm, n["titel"])]
 
         if not relevanta:
             st.info("Inga färska, relevanta nyheter hittades just nu.")
-        for rubrik in relevanta:
-            poang, bedomning = analysera_sentiment(rubrik)
+        for i, nyhet in enumerate(relevanta):
+            poang, bedomning = analysera_sentiment(nyhet["titel"])
             farg = {"POSITIV": "green", "NEGATIV": "red", "NEUTRAL": "gray"}[bedomning]
+            rubrik = f"[{nyhet['titel']}]({nyhet['lank']})" if nyhet.get("lank") else nyhet["titel"]
             st.markdown(f":{farg}[**{bedomning}**] ({poang:+d})  {rubrik}")
+
+            meta = " · ".join(x for x in [nyhet.get("datum"), nyhet.get("kalla")] if x)
+            if meta:
+                st.caption(meta)
+
+            if GEMINI_API_KEY:
+                _nyhetstolkning_fragment(valt_bolag, nyhet, key=f"{valt_bolag}_{i}")
+            st.divider()
     except Exception as e:
         st.error(f"Kunde inte hämta nyheter: {e}")
+
+    st.markdown("##### Fler nyheter (Yahoo Finance)")
+    st.caption("Har redan en riktig sammanfattning per nyhet, men täcker mest internationella källor.")
+    yahoo_nyheter = hamta_yahoo_nyheter(ticker)
+    if not yahoo_nyheter:
+        st.caption("Inga nyheter hittades.")
+    for nyhet in yahoo_nyheter:
+        rubrik = f"[{nyhet['titel']}]({nyhet['lank']})" if nyhet.get("lank") else nyhet["titel"]
+        st.markdown(f"**{rubrik}**")
+        meta = " · ".join(x for x in [nyhet.get("datum"), nyhet.get("kalla")] if x)
+        if meta:
+            st.caption(meta)
+        if nyhet.get("sammanfattning"):
+            st.write(nyhet["sammanfattning"])
+        st.divider()
 
 
 def render_nyckeltal(PORTFOLJ):

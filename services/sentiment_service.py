@@ -4,9 +4,12 @@ Sentimentanalys av nyhetsrubriker samt hämtning av nyheter per bolag.
 
 import urllib.parse
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 
 import requests
 import streamlit as st
+
+from services.gemini_service import generera_text
 
 
 def stamform(ord):
@@ -84,10 +87,52 @@ def ar_troligen_relevant(bolag, rubrik):
     return True
 
 
+def _formatera_pubdate(text):
+    if not text:
+        return None
+    try:
+        return parsedate_to_datetime(text).strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None
+
+
 @st.cache_data(ttl=1800)
 def hamta_nyheter_for_bolag(sokterm, max_antal=8):
+    """Hämtar nyheter (titel, länk, datum, källa) från Google News RSS."""
     fraga = urllib.parse.quote(sokterm)
     url = f"https://news.google.com/rss/search?q={fraga}&hl=sv&gl=SE&ceid=SE:sv"
     request = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
     root = ET.fromstring(request.content)
-    return [item.find("title").text for item in root.findall(".//item")][:max_antal]
+
+    nyheter = []
+    for item in root.findall(".//item")[:max_antal]:
+        titel = item.findtext("title")
+        if not titel:
+            continue
+        nyheter.append({
+            "titel": titel,
+            "lank": item.findtext("link"),
+            "datum": _formatera_pubdate(item.findtext("pubDate")),
+            "kalla": item.findtext("source"),
+        })
+    return nyheter
+
+
+def generera_nyhetstolkning(bolag, nyhet):
+    """AI-tolkning av en nyhetsrubrik. Bygger ENDAST på rubriken (Google
+    News RSS ger ingen artikeltext), så det här är en tolkning av vad
+    rubriken sannolikt betyder - inte en sammanfattning av artikeln."""
+    prompt = f"""Du är en nykter, pedagogisk nyhetsanalytiker för en svensk
+privatsparare. Du har ENDAST rubriken nedan att gå på, inte artikeltexten -
+hitta inte på detaljer som inte framgår av rubriken, och var tydlig med att
+det här är en tolkning av rubriken, inte en sammanfattning av artikeln.
+
+Bolag: {bolag}
+Rubrik: "{nyhet['titel']}"
+Källa: {nyhet.get('kalla') or 'okänd'}
+Datum: {nyhet.get('datum') or 'okänt'}
+
+Skriv 2-3 korta meningar på svenska: vad rubriken sannolikt handlar om för
+{bolag} och varför det kan vara relevant för en aktieägare. Ge ingen
+köp-/säljrekommendation."""
+    return generera_text(prompt)

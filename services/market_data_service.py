@@ -66,3 +66,30 @@ def flagga(varde, grans):
 def hamta_index_historik(ticker="^OMX", period="1y"):
     hist = yf.Ticker(ticker).history(period=period)
     return hist.dropna(subset=["Close"])
+
+
+@st.cache_data(ttl=1800)
+def hamta_yahoo_nyheter(ticker, max_antal=5):
+    """Nyheter från Yahoo Finance - till skillnad från Google News RSS ger
+    den här källan en riktig kort sammanfattning per nyhet (ingen AI
+    behövs), men täcker mest engelskspråkiga/internationella källor."""
+    try:
+        rad_nyheter = yf.Ticker(ticker).news or []
+    except Exception:
+        return []
+
+    nyheter = []
+    for post in rad_nyheter[:max_antal]:
+        innehall = post.get("content", {})
+        titel = innehall.get("title")
+        lank = (innehall.get("clickThroughUrl") or {}).get("url")
+        if not titel or not lank:
+            continue
+        nyheter.append({
+            "titel": titel,
+            "sammanfattning": innehall.get("summary"),
+            "lank": lank,
+            "kalla": (innehall.get("provider") or {}).get("displayName"),
+            "datum": (innehall.get("pubDate") or "")[:10] or None,
+        })
+    return nyheter
