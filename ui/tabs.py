@@ -228,6 +228,20 @@ def render_historik(PORTFOLJ):
     st.line_chart(historik_df["varde"])
 
 
+@st.fragment
+def _ai_sammanfattning_fragment(PORTFOLJ, score_data):
+    if st.button("✨ Generera AI-sammanfattning"):
+        with st.spinner("Coachen tänker..."):
+            text, fel = ai_coach_service.generera_ai_sammanfattning(PORTFOLJ, score_data)
+        if fel:
+            st.error(f"Kunde inte hämta AI-sammanfattning: {fel}")
+        else:
+            st.session_state.ai_sammanfattning = text
+
+    if st.session_state.get("ai_sammanfattning"):
+        st.markdown(st.session_state.ai_sammanfattning)
+
+
 def render_ai_coach(PORTFOLJ):
     st.subheader("🤖 AI-portföljcoach")
     st.caption(
@@ -269,16 +283,22 @@ def render_ai_coach(PORTFOLJ):
         )
         return
 
-    if st.button("✨ Generera AI-sammanfattning"):
-        with st.spinner("Coachen tänker..."):
-            text, fel = ai_coach_service.generera_ai_sammanfattning(PORTFOLJ, score_data)
-        if fel:
-            st.error(f"Kunde inte hämta AI-sammanfattning: {fel}")
-        else:
-            st.session_state.ai_sammanfattning = text
+    _ai_sammanfattning_fragment(PORTFOLJ, score_data)
 
-    if st.session_state.get("ai_sammanfattning"):
-        st.markdown(st.session_state.ai_sammanfattning)
+
+@st.fragment
+def _rapport_sammanfattning_fragment(valt_bolag, kvartalsdata):
+    if st.button("✨ Sammanfatta senaste rapporten", key=f"rapport_btn_{valt_bolag}"):
+        with st.spinner("Läser rapporten..."):
+            text, fel = report_service.generera_rapportsammanfattning(valt_bolag, kvartalsdata)
+        if fel:
+            st.error(f"Kunde inte hämta sammanfattning: {fel}")
+        else:
+            st.session_state[f"rapport_sammanfattning_{valt_bolag}"] = text
+
+    sparad_text = st.session_state.get(f"rapport_sammanfattning_{valt_bolag}")
+    if sparad_text:
+        st.markdown(sparad_text)
 
 
 def render_rapporter(PORTFOLJ):
@@ -323,17 +343,7 @@ def render_rapporter(PORTFOLJ):
         )
         return
 
-    if st.button("✨ Sammanfatta senaste rapporten", key=f"rapport_btn_{valt_bolag}"):
-        with st.spinner("Läser rapporten..."):
-            text, fel = report_service.generera_rapportsammanfattning(valt_bolag, kvartalsdata)
-        if fel:
-            st.error(f"Kunde inte hämta sammanfattning: {fel}")
-        else:
-            st.session_state[f"rapport_sammanfattning_{valt_bolag}"] = text
-
-    sparad_text = st.session_state.get(f"rapport_sammanfattning_{valt_bolag}")
-    if sparad_text:
-        st.markdown(sparad_text)
+    _rapport_sammanfattning_fragment(valt_bolag, kvartalsdata)
 
 
 def render_nyheter_sentiment(PORTFOLJ):
