@@ -98,11 +98,13 @@ Portföljens största nedgång (drawdown) i loggad historik: {score_data['max_dr
 Utveckling sedan första loggade dagen: {score_data['utveckling_pct']} %
 Redan uträknad portföljscore (0-100, återge denna siffra oförändrad): {score_data['score']}
 
-Skriv på svenska, kort (max ca 150 ord), i tre korta stycken utan rubriker:
-1) Daglig sammanfattning av läget.
-2) Riskbedömning (koncentration, volatilitet, drawdown).
-3) En allmän förbättringstanke (t.ex. diversifiering eller riskspridning),
-   utan att peka ut enskilda aktier att köpa eller sälja."""
+Skriv på svenska, kort och lättläst, som en punktlista med exakt dessa tre
+punkter (markdown-format, fet rubrik på varje punkt):
+- **Läget:** kort sammanfattning av portföljens nuläge.
+- **Risk:** riskbedömning utifrån koncentration, volatilitet och drawdown.
+- **Förbättring:** en allmän förbättringstanke (t.ex. diversifiering eller
+  riskspridning), utan att peka ut enskilda aktier att köpa eller sälja.
+Max ca 150 ord totalt. Ingen inledande eller avslutande text utanför listan."""
 
 
 def generera_ai_sammanfattning(portfolj, score_data):

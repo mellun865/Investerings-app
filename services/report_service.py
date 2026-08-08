@@ -84,9 +84,16 @@ inga köp-/säljrekommendationer.
 
 {chr(10).join(rader)}
 
-Skriv på svenska, kort (max ca 120 ord), i löpande text utan rubriker: vad
-säger siffrorna om utvecklingen (bättre/sämre än föregående kvartal och
-samma kvartal förra året), och vad en sparare bör hålla ögonen på framåt."""
+Skriv på svenska, kort och lättläst, som en punktlista med exakt dessa
+punkter (markdown-format, fet rubrik på varje punkt):
+- **Utveckling:** vad siffrorna visar (bättre/sämre än föregående kvartal
+  och samma kvartal förra året).
+- **Påverkan på bolaget:** vad utvecklingen kan betyda för {bolag}s
+  verksamhet (t.ex. marginaler, tillväxttakt, lönsamhet).
+- **Påverkan på aktien:** hur det här typiskt kan tolkas av marknaden och
+  vad en {bolag}-aktieägare bör hålla ögonen på framåt.
+Max ca 130 ord totalt. Ingen köp-/säljrekommendation. Ingen inledande eller
+avslutande text utanför listan."""
 
 
 def generera_rapportsammanfattning(bolag, kvartalsdata):

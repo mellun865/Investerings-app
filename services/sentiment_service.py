@@ -137,9 +137,13 @@ Rubrik: "{nyhet['titel']}"
 Källa: {nyhet.get('kalla') or 'okänd'}
 Datum: {nyhet.get('datum') or 'okänt'}
 
-Skriv 2-3 korta meningar på svenska: vad rubriken sannolikt handlar om för
-{bolag} och varför det kan vara relevant för en aktieägare. Ge ingen
-köp-/säljrekommendation."""
+Skriv på svenska, kort och lättläst, som en punktlista med exakt dessa
+punkter (markdown-format, fet rubrik på varje punkt):
+- **Vad det handlar om:** vad rubriken sannolikt betyder.
+- **Påverkan på bolaget:** hur det här kan påverka {bolag}s verksamhet.
+- **Påverkan på aktien:** hur det här typiskt kan tolkas av marknaden.
+Ge ingen köp-/säljrekommendation. Ingen inledande eller avslutande text
+utanför listan."""
     return generera_text(prompt)
 
 
@@ -201,8 +205,13 @@ Datum: {nyhet.get('datum') or 'okänt'}
 Artikeltext:
 {artikeltext}
 
-Skriv på svenska, kort (max ca 130 ord), i löpande text: vad handlar
-artikeln om, och varför kan det vara relevant för en {bolag}-aktieägare."""
+Skriv på svenska, kort och lättläst, som en punktlista med exakt dessa
+punkter (markdown-format, fet rubrik på varje punkt):
+- **Vad artikeln handlar om:** kort sammanfattning av innehållet.
+- **Påverkan på bolaget:** hur det här kan påverka {bolag}s verksamhet.
+- **Påverkan på aktien:** hur det här typiskt kan tolkas av marknaden.
+Max ca 130 ord totalt. Ingen köp-/säljrekommendation. Ingen inledande eller
+avslutande text utanför listan."""
 
 
 def generera_nyhetssammanfattning(bolag, nyhet):
