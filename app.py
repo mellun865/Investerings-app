@@ -30,50 +30,25 @@ if not st.session_state.portfolj:
     st.stop()
 
 vald_flik = st.tabs([
-    "Översikt", "💰 Transaktioner", "📈 Historik", "🤖 AI-coach", "📄 Rapporter",
-    "Nyheter & sentiment", "Nyckeltal", "Kursutveckling", "Riktkurser", "Teknisk analys",
-    "Risk & korrelation", "Utdelningar", "Makroekonomi", "🔭 Bevakningslista",
+    "🏠 Dashboard", "💼 Portfölj", "🤖 AI-coach", "📊 Analys",
+    "📰 Nyheter & Rapporter", "🌍 Makro & Bevakning",
 ])
 PORTFOLJ = st.session_state.portfolj
 
 with vald_flik[0]:
-    tabs.render_oversikt(PORTFOLJ)
+    tabs.render_dashboard(PORTFOLJ)
 
 with vald_flik[1]:
-    tabs.render_transaktioner(PORTFOLJ)
+    tabs.render_portfolj_grupp(PORTFOLJ)
 
 with vald_flik[2]:
-    tabs.render_historik(PORTFOLJ)
-
-with vald_flik[3]:
     tabs.render_ai_coach(PORTFOLJ)
 
+with vald_flik[3]:
+    tabs.render_analys_grupp(PORTFOLJ)
+
 with vald_flik[4]:
-    tabs.render_rapporter(PORTFOLJ)
+    tabs.render_nyheter_rapporter_grupp(PORTFOLJ)
 
 with vald_flik[5]:
-    tabs.render_nyheter_sentiment(PORTFOLJ)
-
-with vald_flik[6]:
-    tabs.render_nyckeltal(PORTFOLJ)
-
-with vald_flik[7]:
-    tabs.render_kursutveckling(PORTFOLJ)
-
-with vald_flik[8]:
-    tabs.render_riktkurser(PORTFOLJ)
-
-with vald_flik[9]:
-    tabs.render_teknisk_analys(PORTFOLJ)
-
-with vald_flik[10]:
-    tabs.render_risk_korrelation(PORTFOLJ)
-
-with vald_flik[11]:
-    tabs.render_utdelningar(PORTFOLJ)
-
-with vald_flik[12]:
-    tabs.render_makroekonomi()
-
-with vald_flik[13]:
-    tabs.render_bevakningslista()
+    tabs.render_makro_bevakning_grupp()

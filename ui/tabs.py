@@ -23,6 +23,167 @@ from services.dividend_service import hamta_utdelningsanalys
 from services.macro_service import FRED_API_KEY, MAKRO_SERIER, hamta_fred_varde
 
 
+def render_dashboard(PORTFOLJ):
+    st.subheader("🏠 Dashboard")
+    st.caption("Det viktigaste om din portfölj samlat på ett ställe.")
+
+    innehav = transactions_service.berakna_innehav(st.session_state.transaktioner)
+    totalt_marknadsvarde = 0.0
+    totalt_anskaffningsvarde = 0.0
+    malkurs_varningar = []
+    for namn, data in PORTFOLJ.items():
+        bolagsinnehav = innehav.get(namn)
+        antal = bolagsinnehav["antal"] if bolagsinnehav else 0.0
+        try:
+            hist, _ = hamta_kursdata(data["ticker"])
+            senaste_pris = hist["Close"].iloc[-1] if not hist.empty else None
+        except Exception:
+            senaste_pris = None
+
+        if antal and senaste_pris:
+            totalt_marknadsvarde += antal * senaste_pris
+            totalt_anskaffningsvarde += antal * bolagsinnehav["gav"]
+
+        malkurs = data.get("malkurs")
+        if malkurs and senaste_pris and senaste_pris >= malkurs:
+            malkurs_varningar.append(f"**{namn}** har nått din målkurs ({senaste_pris:.1f} ≥ {malkurs:.1f})")
+
+    score_data = ai_coach_service.berakna_portfoljscore(PORTFOLJ)
+
+    c1, c2, c3 = st.columns(3)
+    if totalt_anskaffningsvarde:
+        vinst_pct = (totalt_marknadsvarde - totalt_anskaffningsvarde) / totalt_anskaffningsvarde * 100
+        c1.metric("Totalt marknadsvärde", f"{totalt_marknadsvarde:,.0f} kr".replace(",", " "))
+        c2.metric("Orealiserad vinst", f"{vinst_pct:+.1f} %")
+    else:
+        c1.metric("Totalt marknadsvärde", "–")
+        c2.metric("Orealiserad vinst", "–")
+    c3.metric("Portföljscore", f"{score_data['score']} / 100" if score_data["antal_bolag"] else "–")
+
+    if st.session_state.get("ai_sammanfattning"):
+        st.markdown(st.session_state.ai_sammanfattning)
+    else:
+        st.caption("Ingen AI-sammanfattning genererad än - gå till fliken \"🤖 AI-coach\".")
+
+    st.divider()
+
+    kopläge_varningar = []
+    for namn, data in st.session_state.bevakning.items():
+        try:
+            hist, _ = hamta_kursdata(data["ticker"])
+            senaste_pris = hist["Close"].iloc[-1] if not hist.empty else None
+        except Exception:
+            senaste_pris = None
+        onskad_kop = data.get("onskad_kop")
+        if onskad_kop and senaste_pris and senaste_pris <= onskad_kop:
+            kopläge_varningar.append(
+                f"**{namn}** (bevakning) har nått ditt köpläge ({senaste_pris:.1f} ≤ {onskad_kop:.1f})"
+            )
+
+    if malkurs_varningar or kopläge_varningar:
+        st.markdown("##### 🎯 Att bevaka")
+        for rad in malkurs_varningar + kopläge_varningar:
+            st.markdown(f"- {rad}")
+
+    col_rapporter, col_nyheter = st.columns(2)
+
+    with col_rapporter:
+        st.markdown("##### 📄 Kommande rapporter")
+        rapportrader = []
+        for namn, data in PORTFOLJ.items():
+            try:
+                kvartalsdata = report_service.hamta_kvartalsdata(data["ticker"])
+            except Exception:
+                kvartalsdata = None
+            if kvartalsdata and kvartalsdata.get("nasta_rapportdatum"):
+                rapportrader.append((namn, kvartalsdata["nasta_rapportdatum"]))
+        rapportrader.sort(key=lambda rad: rad[1])
+        if rapportrader:
+            for namn, datum in rapportrader[:5]:
+                st.markdown(f"- **{namn}**: {datum}")
+        else:
+            st.caption("Inga kommande rapportdatum hittades.")
+
+    with col_nyheter:
+        st.markdown("##### 📰 Senaste nyheterna")
+        alla_nyheter = []
+        for namn, data in PORTFOLJ.items():
+            try:
+                nyheter = hamta_nyheter_for_bolag(data["sok"], max_antal=3)
+            except Exception:
+                nyheter = []
+            for n in nyheter:
+                if ar_troligen_relevant(data["sok"], n["titel"]):
+                    alla_nyheter.append((namn, n))
+        alla_nyheter.sort(key=lambda pair: pair[1].get("datum") or "", reverse=True)
+        if alla_nyheter:
+            for namn, n in alla_nyheter[:5]:
+                poang, bedomning = analysera_sentiment(n["titel"])
+                farg = {"POSITIV": "green", "NEGATIV": "red", "NEUTRAL": "gray"}[bedomning]
+                rubrik = f"[{n['titel']}]({n['lank']})" if n.get("lank") else n["titel"]
+                st.markdown(f":{farg}[**{bedomning}**] **{namn}**: {rubrik}")
+        else:
+            st.caption("Inga färska nyheter hittades.")
+
+
+def render_portfolj_grupp(PORTFOLJ):
+    val = st.radio(
+        "Visa", ["Innehav", "💰 Transaktioner", "📈 Historik", "Utdelningar"],
+        horizontal=True, key="portfolj_subval", label_visibility="collapsed",
+    )
+    st.divider()
+    if val == "Innehav":
+        render_oversikt(PORTFOLJ)
+    elif val == "💰 Transaktioner":
+        render_transaktioner(PORTFOLJ)
+    elif val == "📈 Historik":
+        render_historik(PORTFOLJ)
+    else:
+        render_utdelningar(PORTFOLJ)
+
+
+def render_analys_grupp(PORTFOLJ):
+    val = st.radio(
+        "Visa", ["Nyckeltal", "Kursutveckling", "Riktkurser", "Teknisk analys", "Risk & korrelation"],
+        horizontal=True, key="analys_subval", label_visibility="collapsed",
+    )
+    st.divider()
+    if val == "Nyckeltal":
+        render_nyckeltal(PORTFOLJ)
+    elif val == "Kursutveckling":
+        render_kursutveckling(PORTFOLJ)
+    elif val == "Riktkurser":
+        render_riktkurser(PORTFOLJ)
+    elif val == "Teknisk analys":
+        render_teknisk_analys(PORTFOLJ)
+    else:
+        render_risk_korrelation(PORTFOLJ)
+
+
+def render_nyheter_rapporter_grupp(PORTFOLJ):
+    val = st.radio(
+        "Visa", ["Nyheter & sentiment", "📄 Rapporter"],
+        horizontal=True, key="nyheter_rapporter_subval", label_visibility="collapsed",
+    )
+    st.divider()
+    if val == "Nyheter & sentiment":
+        render_nyheter_sentiment(PORTFOLJ)
+    else:
+        render_rapporter(PORTFOLJ)
+
+
+def render_makro_bevakning_grupp():
+    val = st.radio(
+        "Visa", ["Makroekonomi", "🔭 Bevakningslista"],
+        horizontal=True, key="makro_bevakning_subval", label_visibility="collapsed",
+    )
+    st.divider()
+    if val == "Makroekonomi":
+        render_makroekonomi()
+    else:
+        render_bevakningslista()
+
+
 def render_oversikt(PORTFOLJ):
     st.subheader("Snabböverblick över alla innehav")
     st.caption(
