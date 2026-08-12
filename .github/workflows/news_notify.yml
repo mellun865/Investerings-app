@@ -23,7 +23,7 @@ jobs:
           mkdir -p .streamlit
           cat > .streamlit/secrets.toml << EOF
           GITHUB_TOKEN = "${{ secrets.DATA_REPO_TOKEN }}"
-          GITHUB_DATA_REPO = "${{ secrets.GITHUB_DATA_REPO }}"
+          GITHUB_DATA_REPO = "${{ secrets.DATA_REPO }}"
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
           EOF
