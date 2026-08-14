@@ -10,6 +10,12 @@ from services.market_data_service import sok_bolag, bolagsinfo_fran_traff
 
 def render_sidebar():
     with st.sidebar:
+        if "auth" in st.secrets and st.user.is_logged_in:
+            st.caption(f"Inloggad som {st.user.email}")
+            if st.button("Logga ut", use_container_width=True):
+                st.logout()
+            st.divider()
+
         st.header("Din portfölj")
         sokterm_ny = st.text_input(
             "Lägg till en aktie (sök på bolagsnamn)",

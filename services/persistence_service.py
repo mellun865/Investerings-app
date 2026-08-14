@@ -11,9 +11,17 @@ secrets - annars faller den tillbaka på lokala filer, så lokal utveckling
 
 OBS: datarepot MÅSTE vara privat - appkodens repo är publikt (se
 gemini_service.py), men de faktiska innehaven/beloppen får inte vara det.
+
+Om Google-inloggning är konfigurerad (se auth-sektionen i app.py) lagras
+varje inloggad användares data separat, under en mapp per användar-ID
+(sanerad e-postadress) - se _anvandar_id/_lokal_sokvag/_github_sokvag.
+Utan inloggning (lokal utveckling, eller fristående skript utanför en
+Streamlit-session) används samma delade rotsökvägar som innan
+flerpersonsstödet.
 """
 
 import os
+import re
 import json
 import base64
 
@@ -86,18 +94,49 @@ def _github_spara(sokvag, data):
     svar.raise_for_status()
 
 
+def _anvandar_id():
+    """Filsystemsäkert ID för inloggad användare (Google-e-post via
+    st.login()), t.ex. "lbmelwin_gmail_com". Tom sträng om inloggning inte
+    är konfigurerad/aktiv - lokal utveckling utan auth-secrets i
+    secrets.toml, eller ett fristående skript som news_notify.py som körs
+    utan Streamlit-session. Då används exakt samma rotsökvägar som innan
+    flerpersonsstödet, så den ursprungliga datan inte flyttas/påverkas."""
+    try:
+        if "auth" not in st.secrets or not st.user.is_logged_in:
+            return ""
+        epost = st.user.email or ""
+    except Exception:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "_", epost.lower()).strip("_")
+
+
+def _lokal_sokvag(fil):
+    uid = _anvandar_id()
+    if not uid:
+        return fil
+    katalog = os.path.join(os.path.dirname(fil), "anvandardata", uid)
+    os.makedirs(katalog, exist_ok=True)
+    return os.path.join(katalog, os.path.basename(fil))
+
+
+def _github_sokvag(sokvag):
+    uid = _anvandar_id()
+    return f"users/{uid}/{sokvag}" if uid else sokvag
+
+
 def spara_lista(session_nyckel, fil, github_sokvag):
     data = st.session_state[session_nyckel]
     if _github_konfigurerad():
-        _github_spara(github_sokvag, data)
+        _github_spara(_github_sokvag(github_sokvag), data)
     else:
-        with open(fil, "w", encoding="utf-8") as f:
+        with open(_lokal_sokvag(fil), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def ladda_lista(fil, github_sokvag, standard):
     if _github_konfigurerad():
-        return _github_lasa(github_sokvag, standard)
+        return _github_lasa(_github_sokvag(github_sokvag), standard)
+    fil = _lokal_sokvag(fil)
     if os.path.exists(fil):
         try:
             with open(fil, "r", encoding="utf-8") as f:

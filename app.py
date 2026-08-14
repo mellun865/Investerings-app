@@ -14,11 +14,27 @@ from services import persistence_service, history_service
 from ui import sidebar, tabs
 
 
+st.set_page_config(page_title="Min portföljanalys", layout="wide")
+
+# Google-inloggning (st.login) är valfri - styrs av en [auth]-sektion i
+# secrets.toml. Utan den körs appen precis som innan, enanvändarläge utan
+# inloggning (t.ex. lokal utveckling som inte satt upp Google OAuth än).
+AUTH_KONFIGURERAD = "auth" in st.secrets
+
+if AUTH_KONFIGURERAD and not st.user.is_logged_in:
+    st.title("📊 Min portföljanalys")
+    st.caption(
+        "Ett verktyg för information och lärande - inte finansiell rådgivning. "
+        "Analytikers riktkurser och sentiment är hjälpmedel, inte facit."
+    )
+    st.info("Logga in med Google för att se och hantera din egen portfölj.")
+    st.button("🔐 Logga in med Google", on_click=st.login)
+    st.stop()
+
 persistence_service.init_session_state()
 history_service.registrera_dagens_varde(st.session_state.portfolj)
 sidebar.render_sidebar()
 
-st.set_page_config(page_title="Min portföljanalys", layout="wide")
 st.title("📊 Min portföljanalys")
 st.caption(
     "Ett verktyg för information och lärande - inte finansiell rådgivning. "
