@@ -9,6 +9,7 @@ import numpy as np
 import streamlit as st
 
 from services import persistence_service, transactions_service, ai_coach_service, report_service
+from services.history_service import BENCHMARKS, berakna_jamforelse
 from services.gemini_service import GEMINI_API_KEY
 from services.market_data_service import hamta_kursdata, flagga, hamta_index_historik, hamta_yahoo_nyheter
 from services.sentiment_service import (
@@ -389,6 +390,21 @@ def render_historik(PORTFOLJ):
     c3.metric("Största nedgång (drawdown)", f"{max_drawdown:.1f} %")
 
     st.line_chart(historik_df["varde"])
+
+    st.markdown("##### Jämför med index")
+    valt_namn = st.selectbox("Index", list(BENCHMARKS.keys()), key="historik_benchmark")
+    jamforelse_df = berakna_jamforelse(historik_df, BENCHMARKS[valt_namn])
+    if jamforelse_df is None:
+        st.info("Kunde inte hämta indexdata just nu - försök igen om en stund.")
+    else:
+        b1, b2 = st.columns(2)
+        b1.metric("Portföljens utveckling", f"{jamforelse_df['Portfölj'].iloc[-1]:+.1f} %")
+        b2.metric(f"{valt_namn}s utveckling", f"{jamforelse_df['Index'].iloc[-1]:+.1f} %")
+        st.caption(
+            "Båda kurvorna visar utveckling i % sedan din första loggade dag, så "
+            "portföljens kronor och indexets poäng blir jämförbara."
+        )
+        st.line_chart(jamforelse_df)
 
 
 @st.fragment
