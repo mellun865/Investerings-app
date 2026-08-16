@@ -26,6 +26,10 @@ jobs:
           GITHUB_DATA_REPO = "${{ secrets.DATA_REPO }}"
           TELEGRAM_BOT_TOKEN = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
           TELEGRAM_CHAT_ID = "${{ secrets.TELEGRAM_CHAT_ID }}"
+          GIST_TOKEN = "${{ secrets.GIST_TOKEN }}"
           EOF
 
       - run: python scripts/news_notify.py
+
+      - name: Uppdatera mobil-sammanfattning (PWA)
+        run: python scripts/generate_mobile_summary.py
