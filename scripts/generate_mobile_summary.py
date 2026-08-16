@@ -5,7 +5,8 @@ senaste relevanta nyheter, portföljscore) och publicerar den som en HEMLIG
 GitHub Gist - en fil på en ogissningsbar URL, inte listad någonstans.
 
 Tänkt att köras periodiskt via GitHub Actions (samma workflow som
-news_notify.py, eller en egen) så att mobil-PWA:n (pwa/) kan hämta färdig
+news_notify.py, eller en egen) så att mobil-PWA:n (docs/, namnet krävs av
+GitHub Pages "deploy from branch" - stödjer bara /(root) eller /docs) kan hämta färdig
 data direkt utan att själv prata med GitHub/yfinance/Gemini och utan att
 behöva några hemliga nycklar i webbläsaren.
 
