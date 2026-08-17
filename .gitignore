@@ -10,3 +10,6 @@ transaktioner_data.json
 portfolj_historik.json
 notified_news.json
 anvandardata/
+
+# Planeringsdokument med personliga detaljer, inte avsett att vara publikt
+CLAUDE.md
