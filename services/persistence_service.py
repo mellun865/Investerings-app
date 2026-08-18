@@ -28,6 +28,8 @@ import base64
 import requests
 import streamlit as st
 
+from services.config import get_secret
+
 
 STARTPORTFOLJ = {
     "Axfood":          {"ticker": "AXFO.ST",   "borskollen": "axfood",                "sok": "Axfood"},
@@ -47,9 +49,9 @@ BEVAKNING_FIL = os.path.join(_PROJEKT_ROT, "bevakning_data.json")
 TRANSAKTIONER_FIL = os.path.join(_PROJEKT_ROT, "transaktioner_data.json")
 HISTORIK_FIL = os.path.join(_PROJEKT_ROT, "portfolj_historik.json")
 
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-GITHUB_DATA_REPO = st.secrets.get("GITHUB_DATA_REPO", "")
-GITHUB_DATA_BRANCH = st.secrets.get("GITHUB_DATA_BRANCH", "main")
+GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
+GITHUB_DATA_REPO = get_secret("GITHUB_DATA_REPO")
+GITHUB_DATA_BRANCH = get_secret("GITHUB_DATA_BRANCH", "main")
 
 
 def _github_konfigurerad():
@@ -110,8 +112,7 @@ def _anvandar_id():
     return re.sub(r"[^a-z0-9]+", "_", epost.lower()).strip("_")
 
 
-def _lokal_sokvag(fil):
-    uid = _anvandar_id()
+def _lokal_sokvag(fil, uid):
     if not uid:
         return fil
     katalog = os.path.join(os.path.dirname(fil), "anvandardata", uid)
@@ -119,24 +120,26 @@ def _lokal_sokvag(fil):
     return os.path.join(katalog, os.path.basename(fil))
 
 
-def _github_sokvag(sokvag):
-    uid = _anvandar_id()
+def _github_sokvag(sokvag, uid):
     return f"users/{uid}/{sokvag}" if uid else sokvag
 
 
-def spara_lista(session_nyckel, fil, github_sokvag):
-    data = st.session_state[session_nyckel]
+def _spara(data, fil, github_sokvag, user_id=""):
+    """Ren skrivfunktion - tar emot user_id explicit istället för att
+    härleda det från st.user, så den kan anropas utan en Streamlit-session
+    (t.ex. från FastAPI-backend eller fristående skript)."""
     if _github_konfigurerad():
-        _github_spara(_github_sokvag(github_sokvag), data)
+        _github_spara(_github_sokvag(github_sokvag, user_id), data)
     else:
-        with open(_lokal_sokvag(fil), "w", encoding="utf-8") as f:
+        with open(_lokal_sokvag(fil, user_id), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def ladda_lista(fil, github_sokvag, standard):
+def _ladda(fil, github_sokvag, standard, user_id=""):
+    """Ren läsfunktion - se _spara."""
     if _github_konfigurerad():
-        return _github_lasa(_github_sokvag(github_sokvag), standard)
-    fil = _lokal_sokvag(fil)
+        return _github_lasa(_github_sokvag(github_sokvag, user_id), standard)
+    fil = _lokal_sokvag(fil, user_id)
     if os.path.exists(fil):
         try:
             with open(fil, "r", encoding="utf-8") as f:
@@ -144,6 +147,14 @@ def ladda_lista(fil, github_sokvag, standard):
         except (OSError, json.JSONDecodeError):
             pass
     return standard
+
+
+def spara_lista(session_nyckel, fil, github_sokvag):
+    _spara(st.session_state[session_nyckel], fil, github_sokvag, _anvandar_id())
+
+
+def ladda_lista(fil, github_sokvag, standard):
+    return _ladda(fil, github_sokvag, standard, _anvandar_id())
 
 
 def spara_portfolj():

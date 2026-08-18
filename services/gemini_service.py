@@ -6,9 +6,9 @@ båda bara skickar redan uträknade siffror till Gemini för att få text -
 aldrig för att räkna ut siffrorna själva.
 """
 
-import streamlit as st
+from services.config import get_secret
 
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 GEMINI_MODELL = "gemini-flash-latest"
 
 

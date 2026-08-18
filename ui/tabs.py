@@ -49,7 +49,9 @@ def render_dashboard(PORTFOLJ):
         if malkurs and senaste_pris and senaste_pris >= malkurs:
             malkurs_varningar.append(f"**{namn}** har nått din målkurs ({senaste_pris:.1f} ≥ {malkurs:.1f})")
 
-    score_data = ai_coach_service.berakna_portfoljscore(PORTFOLJ)
+    score_data = ai_coach_service.berakna_portfoljscore(
+        PORTFOLJ, st.session_state.transaktioner, st.session_state.portfolj_historik
+    )
 
     c1, c2, c3 = st.columns(3)
     if totalt_anskaffningsvarde:
@@ -323,7 +325,9 @@ def render_transaktioner(PORTFOLJ):
             pris, avgift = 0.0, 0.0
 
         if st.form_submit_button("➕ Lägg till transaktion"):
-            transactions_service.lagg_till_transaktion(bolag, typ, datum, antal, pris, avgift)
+            st.session_state.transaktioner = transactions_service.lagg_till_transaktion(
+                st.session_state.transaktioner, bolag, typ, datum, antal, pris, avgift
+            )
             persistence_service.spara_transaktioner()
             st.success("Transaktion tillagd!")
             st.rerun()
@@ -352,7 +356,9 @@ def render_transaktioner(PORTFOLJ):
             c3.write(t["typ"])
             c4.write(detaljer)
             if c5.button("✕", key=f"tabort_transaktion_{orig_index}"):
-                transactions_service.ta_bort_transaktion(orig_index)
+                st.session_state.transaktioner = transactions_service.ta_bort_transaktion(
+                    st.session_state.transaktioner, orig_index
+                )
                 persistence_service.spara_transaktioner()
                 st.rerun()
 
@@ -429,7 +435,9 @@ def render_ai_coach(PORTFOLJ):
         "utifrån exakt dessa siffror - inget annat om dig eller din portfölj skickas iväg."
     )
 
-    score_data = ai_coach_service.berakna_portfoljscore(PORTFOLJ)
+    score_data = ai_coach_service.berakna_portfoljscore(
+        PORTFOLJ, st.session_state.transaktioner, st.session_state.portfolj_historik
+    )
     if not score_data["antal_bolag"]:
         st.info(
             "Inga innehav med registrerade transaktioner ännu - logga köp under "

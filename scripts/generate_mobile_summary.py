@@ -138,9 +138,7 @@ def _bygg_sammanfattning(portfolj, transaktioner, historik):
         dagens_forandring_kr = round(totalt_varde - totalt_varde_igar, 0)
         dagens_forandring_pct = round((totalt_varde - totalt_varde_igar) / totalt_varde_igar * 100, 2)
 
-    st.session_state.transaktioner = transaktioner
-    st.session_state.portfolj_historik = historik
-    score_data = ai_coach_service.berakna_portfoljscore(portfolj)
+    score_data = ai_coach_service.berakna_portfoljscore(portfolj, transaktioner, historik)
 
     nyheter_ut = []
     for bolag, data in portfolj.items():

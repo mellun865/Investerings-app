@@ -32,7 +32,12 @@ if AUTH_KONFIGURERAD and not st.user.is_logged_in:
     st.stop()
 
 persistence_service.init_session_state()
-history_service.registrera_dagens_varde(st.session_state.portfolj)
+ny_historik = history_service.registrera_dagens_varde(
+    st.session_state.portfolj, st.session_state.transaktioner, st.session_state.portfolj_historik
+)
+if ny_historik is not None:
+    st.session_state.portfolj_historik = ny_historik
+    persistence_service.spara_historik()
 sidebar.render_sidebar()
 
 st.title("📊 Min portföljanalys")

@@ -5,25 +5,28 @@ vinst utifrån loggen. Portföljlistan i persistence_service håller bara
 reda på VILKA bolag man äger - denna modul räknar ut HUR MYCKET.
 """
 
-import streamlit as st
-
 TYPER = ["Köp", "Sälj", "Utdelning", "Split"]
 
 
-def lagg_till_transaktion(bolag, typ, datum, antal, pris, avgift=0.0):
-    st.session_state.transaktioner.append({
+def lagg_till_transaktion(transaktioner, bolag, typ, datum, antal, pris, avgift=0.0):
+    """Returnerar en NY, datumsorterad lista - muterar inte transaktioner
+    på plats, så anroparen (Streamlit-session-state eller FastAPI) själv
+    äger var listan lagras."""
+    nya = transaktioner + [{
         "bolag": bolag,
         "typ": typ,
         "datum": str(datum),
         "antal": float(antal) if antal else 0.0,
         "pris": float(pris) if pris else 0.0,
         "avgift": float(avgift) if avgift else 0.0,
-    })
-    st.session_state.transaktioner.sort(key=lambda t: t["datum"])
+    }]
+    nya.sort(key=lambda t: t["datum"])
+    return nya
 
 
-def ta_bort_transaktion(index):
-    del st.session_state.transaktioner[index]
+def ta_bort_transaktion(transaktioner, index):
+    """Returnerar en NY lista utan transaktionen på angivet index."""
+    return [t for i, t in enumerate(transaktioner) if i != index]
 
 
 def _tomt_innehav():

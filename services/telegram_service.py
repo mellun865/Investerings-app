@@ -6,10 +6,11 @@ görs ingenting, resten av appen/skripten fungerar precis som förut.
 """
 
 import requests
-import streamlit as st
 
-TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+from services.config import get_secret
+
+TELEGRAM_BOT_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = get_secret("TELEGRAM_CHAT_ID")
 
 
 def telegram_konfigurerad():

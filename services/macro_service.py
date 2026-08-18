@@ -9,8 +9,9 @@ klartext där skulle vara synlig för vem som helst.
 import requests
 import streamlit as st
 
+from services.config import get_secret
 
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "")
+FRED_API_KEY = get_secret("FRED_API_KEY")
 
 MAKRO_SERIER = {
     "Styrränta USA (Fed funds rate)":        {"id": "FEDFUNDS",        "enhet": "%",      "units": None},

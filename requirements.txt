@@ -6,3 +6,6 @@ numpy
 google-genai
 beautifulsoup4
 Authlib==1.3.2
+fastapi
+uvicorn[standard]
+python-dotenv

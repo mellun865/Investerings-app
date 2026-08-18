@@ -10,9 +10,8 @@ nuvarande kurser (market_data_service).
 from datetime import date
 
 import pandas as pd
-import streamlit as st
 
-from services import persistence_service, transactions_service
+from services import transactions_service
 from services.market_data_service import hamta_index_historik, hamta_kursdata
 
 BENCHMARKS = {
@@ -22,12 +21,12 @@ BENCHMARKS = {
 }
 
 
-def berakna_totalt_marknadsvarde(portfolj):
+def berakna_totalt_marknadsvarde(portfolj, transaktioner):
     """Räknar ihop portföljens totala marknadsvärde just nu, utifrån
     nuvarande antal aktier (från transaktionsloggen) och senaste kurs
     per bolag. OBS: summerar olika valutor rakt av utan växelkursomräkning,
     precis som totalsumman i "Översikt"-fliken."""
-    innehav = transactions_service.berakna_innehav(st.session_state.transaktioner)
+    innehav = transactions_service.berakna_innehav(transaktioner)
     totalt = 0.0
     for namn, data in portfolj.items():
         bolagsinnehav = innehav.get(namn)
@@ -44,22 +43,23 @@ def berakna_totalt_marknadsvarde(portfolj):
     return totalt
 
 
-def registrera_dagens_varde(portfolj):
-    """Sparar dagens portföljvärde, en gång per dag (skriver över dagens
-    rad om appen körs flera gånger samma dag, så historiken inte
-    svämmar över). Gör ingenting om portföljen saknar innehav ännu."""
+def registrera_dagens_varde(portfolj, transaktioner, historik):
+    """Räknar fram dagens portföljvärde och returnerar en NY historiklista
+    med dagens rad tillagd (skriver över dagens rad om den redan finns, så
+    historiken inte svämmar över vid flera körningar samma dag). Returnerar
+    None om ingenting ska registreras (tom portfölj eller inget värde att
+    räkna) - anroparen ansvarar själv för att spara resultatet."""
     if not portfolj:
-        return
-    totalt = berakna_totalt_marknadsvarde(portfolj)
+        return None
+    totalt = berakna_totalt_marknadsvarde(portfolj, transaktioner)
     if not totalt:
-        return
+        return None
 
     idag = str(date.today())
-    historik = [rad for rad in st.session_state.portfolj_historik if rad["datum"] != idag]
-    historik.append({"datum": idag, "varde": round(totalt, 2)})
-    historik.sort(key=lambda r: r["datum"])
-    st.session_state.portfolj_historik = historik
-    persistence_service.spara_historik()
+    ny_historik = [rad for rad in historik if rad["datum"] != idag]
+    ny_historik.append({"datum": idag, "varde": round(totalt, 2)})
+    ny_historik.sort(key=lambda r: r["datum"])
+    return ny_historik
 
 
 def berakna_jamforelse(historik_df, ticker):

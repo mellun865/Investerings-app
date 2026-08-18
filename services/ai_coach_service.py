@@ -9,7 +9,6 @@ här koden laddas upp till ett publikt GitHub-repo.
 """
 
 import pandas as pd
-import streamlit as st
 
 from services import transactions_service
 from services.market_data_service import hamta_kursdata
@@ -17,12 +16,12 @@ from services.risk_service import berakna_volatilitet, berakna_max_drawdown
 from services.gemini_service import GEMINI_API_KEY, generera_text
 
 
-def berakna_portfoljscore(portfolj):
+def berakna_portfoljscore(portfolj, transaktioner, historik):
     """Räknar ut en portföljscore 0-100: diversifiering (0-30), risk
     (0-30) och historisk utveckling/stabilitet (0-40). Returnerar poängen
     plus de underliggande måtten, så UI:t och AI-prompten visar/använder
     exakt samma siffror."""
-    innehav = transactions_service.berakna_innehav(st.session_state.transaktioner)
+    innehav = transactions_service.berakna_innehav(transaktioner)
 
     marknadsvarden = {}
     volatiliteter = []
@@ -62,7 +61,6 @@ def berakna_portfoljscore(portfolj):
     max_drawdown_pct = None
     utveckling_pct = None
     utveckling_totalt_poang = 20.0
-    historik = st.session_state.portfolj_historik
     if len(historik) >= 2:
         varde_serie = pd.Series([r["varde"] for r in historik])
         max_drawdown_pct = berakna_max_drawdown(varde_serie)
